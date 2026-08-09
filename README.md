@@ -40,12 +40,19 @@ python3 importers/kt-import.py awdb --file ~/.local/share/activitywatch/aw-serve
 ### Idle detection is the thing that breaks capture
 
 The watcher only records windows while you are *not* AFK, so a broken idle source means
-an empty database, not just a wrong AFK number. On X11 install `xprintidle`. The
-`/dev/input` fallback the docs suggest is **not** a reliable substitute: it reads
-`st_atime`, and `/dev` is normally mounted `relatime`, so the timestamp is frozen at boot
-and the watcher concludes you have been idle for hours. Being in group `input` does not
-change that. Check with `journalctl --user -u kuhytrack-watcher`: the startup line must
-read `idle source: xprintidle`, and a `!!` line means no window source was found at all.
+an empty database, not just a wrong AFK number. On X11 install `xprintidle`.
+
+The `/dev/input` fallback is **not** a reliable substitute: it reads `st_atime`, and
+`/dev` is normally mounted `relatime`, so the timestamp freezes at boot and the watcher
+concludes you have been idle for hours. Being in group `input` does not change that —
+it is a mount-option problem, not a permissions one.
+
+Both halves are now enforced rather than documented: `_idle_devinput` returns `None`
+under `relatime`/`noatime` so it can never be silently selected, and the installer
+refuses to run on X11 without `xprintidle` (`KT_SKIP_IDLE_CHECK=1` to override).
+
+Check with `journalctl --user -u kuhytrack-watcher`: the startup line must read
+`idle source: xprintidle`, and a `!!` line means no window source was found at all.
 
 ## Files
 
