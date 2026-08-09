@@ -35,7 +35,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 VERSION = "kuhytrack 0.1.0"
-DB_PATH = Path(os.environ.get("KT_DB", Path.home() / ".local/share/kuhytrack/kt.db")).expanduser()
+DB_PATH = Path(
+    os.environ.get("KT_DB", Path.home() / ".local/share/kuhytrack/kt.db")
+).expanduser()
 HOST = os.environ.get("KT_HOST", "127.0.0.1")
 PORT = int(os.environ.get("KT_PORT", "5600"))
 TOKEN = os.environ.get("KT_TOKEN", "")
@@ -117,9 +119,15 @@ def db() -> sqlite3.Connection:
 
 def bucket_row_to_dict(r: sqlite3.Row) -> dict:
     return {
-        "id": r["id"], "created": r["created"], "name": r["name"], "type": r["type"],
-        "client": r["client"], "hostname": r["hostname"], "device": r["device"],
-        "data": json.loads(r["data"] or "{}"), "last_updated": r["last_updated"],
+        "id": r["id"],
+        "created": r["created"],
+        "name": r["name"],
+        "type": r["type"],
+        "client": r["client"],
+        "hostname": r["hostname"],
+        "device": r["device"],
+        "data": json.loads(r["data"] or "{}"),
+        "last_updated": r["last_updated"],
     }
 
 
@@ -133,27 +141,42 @@ def create_bucket(bid: str, body: dict):
     db().execute(
         "INSERT OR IGNORE INTO buckets(id,created,name,type,client,hostname,device,data,last_updated)"
         " VALUES(?,?,?,?,?,?,?,?,?)",
-        (bid, body.get("created") or fmt_ts(now()), body.get("name") or bid,
-         body.get("type") or "unknown", body.get("client") or "unknown", hostname,
-         body.get("device") or hostname, json.dumps(body.get("data") or {}), fmt_ts(now())),
+        (
+            bid,
+            body.get("created") or fmt_ts(now()),
+            body.get("name") or bid,
+            body.get("type") or "unknown",
+            body.get("client") or "unknown",
+            hostname,
+            body.get("device") or hostname,
+            json.dumps(body.get("data") or {}),
+            fmt_ts(now()),
+        ),
     )
 
 
 def row_to_event(r: sqlite3.Row) -> dict:
-    return {"id": r["id"], "timestamp": r["timestamp"], "duration": r["duration"],
-            "data": json.loads(r["data"])}
+    return {
+        "id": r["id"],
+        "timestamp": r["timestamp"],
+        "duration": r["duration"],
+        "data": json.loads(r["data"]),
+    }
 
 
 def get_events(bid: str, limit=-1, start=None, end=None) -> list:
     q = "SELECT * FROM events WHERE bucket_id=?"
     args: list = [bid]
     if start:
-        q += " AND timestamp >= ?"; args.append(fmt_ts(parse_ts(start)))
+        q += " AND timestamp >= ?"
+        args.append(fmt_ts(parse_ts(start)))
     if end:
-        q += " AND timestamp <= ?"; args.append(fmt_ts(parse_ts(end)))
+        q += " AND timestamp <= ?"
+        args.append(fmt_ts(parse_ts(end)))
     q += " ORDER BY timestamp DESC"
     if limit and int(limit) > 0:
-        q += " LIMIT ?"; args.append(int(limit))
+        q += " LIMIT ?"
+        args.append(int(limit))
     return [row_to_event(r) for r in db().execute(q, args)]
 
 
@@ -163,9 +186,15 @@ def insert_event(bid: str, ev: dict) -> dict:
     data = json.dumps(ev.get("data") or {}, sort_keys=True)
     cur = db().execute(
         "INSERT INTO events(bucket_id,timestamp,duration,data) VALUES(?,?,?,?)",
-        (bid, ts, dur, data))
+        (bid, ts, dur, data),
+    )
     db().execute("UPDATE buckets SET last_updated=? WHERE id=?", (fmt_ts(now()), bid))
-    return {"id": cur.lastrowid, "timestamp": ts, "duration": dur, "data": json.loads(data)}
+    return {
+        "id": cur.lastrowid,
+        "timestamp": ts,
+        "duration": dur,
+        "data": json.loads(data),
+    }
 
 
 def heartbeat(bid: str, ev: dict, pulsetime: float) -> dict:
@@ -179,9 +208,14 @@ def heartbeat(bid: str, ev: dict, pulsetime: float) -> dict:
     hb_dur = float(ev.get("duration") or 0)
     hb_data = json.dumps(ev.get("data") or {}, sort_keys=True)
 
-    last = db().execute(
-        "SELECT * FROM events WHERE bucket_id=? ORDER BY timestamp DESC, id DESC LIMIT 1",
-        (bid,)).fetchone()
+    last = (
+        db()
+        .execute(
+            "SELECT * FROM events WHERE bucket_id=? ORDER BY timestamp DESC, id DESC LIMIT 1",
+            (bid,),
+        )
+        .fetchone()
+    )
     if last is not None and last["data"] == hb_data:
         last_ts = parse_ts(last["timestamp"])
         last_dur = float(last["duration"])
@@ -189,12 +223,22 @@ def heartbeat(bid: str, ev: dict, pulsetime: float) -> dict:
             window_end = last_ts + timedelta(seconds=last_dur + pulsetime)
             if last_ts <= hb_ts <= window_end:
                 new_dur = max(last_dur, (hb_ts - last_ts).total_seconds() + hb_dur)
-                db().execute("UPDATE events SET duration=? WHERE id=?", (new_dur, last["id"]))
-                db().execute("UPDATE buckets SET last_updated=? WHERE id=?", (fmt_ts(now()), bid))
-                return {"id": last["id"], "timestamp": last["timestamp"],
-                        "duration": new_dur, "data": json.loads(hb_data)}
-    return insert_event(bid, {"timestamp": fmt_ts(hb_ts), "duration": hb_dur,
-                              "data": json.loads(hb_data)})
+                db().execute(
+                    "UPDATE events SET duration=? WHERE id=?", (new_dur, last["id"])
+                )
+                db().execute(
+                    "UPDATE buckets SET last_updated=? WHERE id=?", (fmt_ts(now()), bid)
+                )
+                return {
+                    "id": last["id"],
+                    "timestamp": last["timestamp"],
+                    "duration": new_dur,
+                    "data": json.loads(hb_data),
+                }
+    return insert_event(
+        bid,
+        {"timestamp": fmt_ts(hb_ts), "duration": hb_dur, "data": json.loads(hb_data)},
+    )
 
 
 # ------------------------------------------------------------------- summaries
@@ -215,9 +259,15 @@ def summary(start=None, end=None, device=None, top=25) -> dict:
     per_type: dict = {}
     intervals: list = []
     for b in buckets:
-        rows = db().execute(
-            "SELECT timestamp,duration,data FROM events WHERE bucket_id=? "
-            "AND timestamp>=? AND timestamp<=?", (b["id"], *args_win)).fetchall()
+        rows = (
+            db()
+            .execute(
+                "SELECT timestamp,duration,data FROM events WHERE bucket_id=? "
+                "AND timestamp>=? AND timestamp<=?",
+                (b["id"], *args_win),
+            )
+            .fetchall()
+        )
         if b["type"] in ("currentwindow", "app.usage", "android.usage"):
             for r in rows:
                 t0 = parse_ts(r["timestamp"]).timestamp()
@@ -247,10 +297,12 @@ def summary(start=None, end=None, device=None, top=25) -> dict:
     if cur_e is not None:
         union += cur_e - cur_s
     return {
-        "start": fmt_ts(start_dt), "end": fmt_ts(end_dt),
+        "start": fmt_ts(start_dt),
+        "end": fmt_ts(end_dt),
         "union_seconds": union,
         "total_seconds": sum(d["seconds"] for d in per_device.values()),
-        "per_device": per_device, "per_type": per_type,
+        "per_device": per_device,
+        "per_type": per_type,
         "top_apps": dict(sorted(per_app.items(), key=lambda kv: -kv[1])[:top]),
         "devices": sorted({b["device"] for b in buckets}),
     }
@@ -259,21 +311,33 @@ def summary(start=None, end=None, device=None, top=25) -> dict:
 def timeline(start=None, end=None, device=None, limit=2000) -> list:
     end_dt = parse_ts(end) if end else now()
     start_dt = parse_ts(start) if start else end_dt - timedelta(days=1)
-    q = ("SELECT e.timestamp,e.duration,e.data,b.device,b.type,b.id AS bucket "
-         "FROM events e JOIN buckets b ON b.id=e.bucket_id "
-         "WHERE e.timestamp>=? AND e.timestamp<=?")
+    q = (
+        "SELECT e.timestamp,e.duration,e.data,b.device,b.type,b.id AS bucket "
+        "FROM events e JOIN buckets b ON b.id=e.bucket_id "
+        "WHERE e.timestamp>=? AND e.timestamp<=?"
+    )
     args = [fmt_ts(start_dt), fmt_ts(end_dt)]
     if device:
-        q += " AND b.device=?"; args.append(device)
-    q += " ORDER BY e.timestamp DESC LIMIT ?"; args.append(int(limit))
+        q += " AND b.device=?"
+        args.append(device)
+    q += " ORDER BY e.timestamp DESC LIMIT ?"
+    args.append(int(limit))
     out = []
     for r in db().execute(q, args):
         data = json.loads(r["data"])
-        out.append({"timestamp": r["timestamp"], "duration": r["duration"],
-                    "device": r["device"], "type": r["type"], "bucket": r["bucket"],
-                    "app": data.get("app") or data.get("package"),
-                    "title": data.get("title") or data.get("classname"),
-                    "status": data.get("status"), "data": data})
+        out.append(
+            {
+                "timestamp": r["timestamp"],
+                "duration": r["duration"],
+                "device": r["device"],
+                "type": r["type"],
+                "bucket": r["bucket"],
+                "app": data.get("app") or data.get("package"),
+                "title": data.get("title") or data.get("classname"),
+                "status": data.get("status"),
+                "data": data,
+            }
+        )
     return out
 
 
@@ -331,27 +395,59 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/" or p == "/index.html":
                 f = WEB_DIR / "dashboard.html"
                 if f.exists():
-                    return self._send(200, raw=f.read_bytes(), ctype="text/html; charset=utf-8")
+                    return self._send(
+                        200, raw=f.read_bytes(), ctype="text/html; charset=utf-8"
+                    )
                 return self._send(404, {"error": "no dashboard"})
             if p == "/api/0/info":
-                return self._send(200, {"hostname": HOSTNAME, "version": VERSION,
-                                        "testing": False, "device_id": HOSTNAME})
+                return self._send(
+                    200,
+                    {
+                        "hostname": HOSTNAME,
+                        "version": VERSION,
+                        "testing": False,
+                        "device_id": HOSTNAME,
+                    },
+                )
             if p == "/api/0/buckets":
-                return self._send(200, {b["id"]: b for b in
-                                        (bucket_row_to_dict(r) for r in db().execute("SELECT * FROM buckets"))})
+                return self._send(
+                    200,
+                    {
+                        b["id"]: b
+                        for b in (
+                            bucket_row_to_dict(r)
+                            for r in db().execute("SELECT * FROM buckets")
+                        )
+                    },
+                )
             m = re.fullmatch(r"/api/0/buckets/([^/]+)", p)
             if m:
                 b = get_bucket(m.group(1))
-                return self._send(200, b) if b else self._send(404, {"error": "no such bucket"})
+                return (
+                    self._send(200, b)
+                    if b
+                    else self._send(404, {"error": "no such bucket"})
+                )
             m = re.fullmatch(r"/api/0/buckets/([^/]+)/events", p)
             if m:
-                return self._send(200, get_events(m.group(1),
-                                                  limit=int(q.get("limit", [-1])[0]),
-                                                  start=q.get("start", [None])[0],
-                                                  end=q.get("end", [None])[0]))
+                return self._send(
+                    200,
+                    get_events(
+                        m.group(1),
+                        limit=int(q.get("limit", [-1])[0]),
+                        start=q.get("start", [None])[0],
+                        end=q.get("end", [None])[0],
+                    ),
+                )
             m = re.fullmatch(r"/api/0/buckets/([^/]+)/events/count", p)
             if m:
-                r = db().execute("SELECT COUNT(*) c FROM events WHERE bucket_id=?", (m.group(1),)).fetchone()
+                r = (
+                    db()
+                    .execute(
+                        "SELECT COUNT(*) c FROM events WHERE bucket_id=?", (m.group(1),)
+                    )
+                    .fetchone()
+                )
                 return self._send(200, r["c"])
             if p == "/api/0/export":
                 out = {}
@@ -361,29 +457,68 @@ class Handler(BaseHTTPRequestHandler):
                     out[b["id"]] = b
                 return self._send(200, {"buckets": out})
             if p == "/api/0/kt/summary":
-                return self._send(200, summary(q.get("start", [None])[0], q.get("end", [None])[0],
-                                               q.get("device", [None])[0],
-                                               int(q.get("top", [25])[0])))
+                return self._send(
+                    200,
+                    summary(
+                        q.get("start", [None])[0],
+                        q.get("end", [None])[0],
+                        q.get("device", [None])[0],
+                        int(q.get("top", [25])[0]),
+                    ),
+                )
             if p == "/api/0/kt/timeline":
-                return self._send(200, timeline(q.get("start", [None])[0], q.get("end", [None])[0],
-                                                q.get("device", [None])[0],
-                                                int(q.get("limit", [2000])[0])))
+                return self._send(
+                    200,
+                    timeline(
+                        q.get("start", [None])[0],
+                        q.get("end", [None])[0],
+                        q.get("device", [None])[0],
+                        int(q.get("limit", [2000])[0]),
+                    ),
+                )
             if p == "/api/0/kt/habits":
                 habits = []
-                for r in db().execute("SELECT * FROM habits WHERE archived=0 ORDER BY id"):
-                    ticks = [t["day"] for t in db().execute(
-                        "SELECT day FROM habit_ticks WHERE habit_id=? ORDER BY day DESC LIMIT 400", (r["id"],))]
-                    habits.append({"id": r["id"], "name": r["name"], "created": r["created"],
-                                   "meta": json.loads(r["meta"] or "{}"), "ticks": ticks,
-                                   "streak": streak(ticks)})
+                for r in db().execute(
+                    "SELECT * FROM habits WHERE archived=0 ORDER BY id"
+                ):
+                    ticks = [
+                        t["day"]
+                        for t in db().execute(
+                            "SELECT day FROM habit_ticks WHERE habit_id=? ORDER BY day DESC LIMIT 400",
+                            (r["id"],),
+                        )
+                    ]
+                    habits.append(
+                        {
+                            "id": r["id"],
+                            "name": r["name"],
+                            "created": r["created"],
+                            "meta": json.loads(r["meta"] or "{}"),
+                            "ticks": ticks,
+                            "streak": streak(ticks),
+                        }
+                    )
                 return self._send(200, habits)
             if p == "/api/0/kt/sessions":
-                return self._send(200, [dict(r) for r in db().execute(
-                    "SELECT * FROM sessions ORDER BY start DESC LIMIT 500")])
+                return self._send(
+                    200,
+                    [
+                        dict(r)
+                        for r in db().execute(
+                            "SELECT * FROM sessions ORDER BY start DESC LIMIT 500"
+                        )
+                    ],
+                )
             return self._send(404, {"error": "no route", "path": p})
         except ValueError as e:  # bad timestamp/int in the query string
-            return self._send(400, {"error": "bad request", "detail": str(e),
-                                    "hint": "url-encode ISO offsets: '+' becomes a space"})
+            return self._send(
+                400,
+                {
+                    "error": "bad request",
+                    "detail": str(e),
+                    "hint": "url-encode ISO offsets: '+' becomes a space",
+                },
+            )
         except Exception as e:  # noqa: BLE001 — an activity server must never die
             return self._send(500, {"error": type(e).__name__, "detail": str(e)})
 
@@ -417,29 +552,53 @@ class Handler(BaseHTTPRequestHandler):
                 for bid, b in (body.get("buckets") or {}).items():
                     create_bucket(bid, b)
                     for e in b.get("events", []):
-                        insert_event(bid, e); n += 1
+                        insert_event(bid, e)
+                        n += 1
                 return self._send(200, {"imported_events": n})
             if p == "/api/0/kt/habits":
-                db().execute("INSERT OR IGNORE INTO habits(name,created,meta) VALUES(?,?,?)",
-                             (body["name"], fmt_ts(now()), json.dumps(body.get("meta") or {})))
-                r = db().execute("SELECT * FROM habits WHERE name=?", (body["name"],)).fetchone()
+                db().execute(
+                    "INSERT OR IGNORE INTO habits(name,created,meta) VALUES(?,?,?)",
+                    (body["name"], fmt_ts(now()), json.dumps(body.get("meta") or {})),
+                )
+                r = (
+                    db()
+                    .execute("SELECT * FROM habits WHERE name=?", (body["name"],))
+                    .fetchone()
+                )
                 return self._send(200, {"id": r["id"], "name": r["name"]})
             m = re.fullmatch(r"/api/0/kt/habits/(\d+)/tick", p)
             if m:
                 day = body.get("day") or now().strftime("%Y-%m-%d")
                 if body.get("value") == 0:
-                    db().execute("DELETE FROM habit_ticks WHERE habit_id=? AND day=?", (m.group(1), day))
+                    db().execute(
+                        "DELETE FROM habit_ticks WHERE habit_id=? AND day=?",
+                        (m.group(1), day),
+                    )
                 else:
-                    db().execute("INSERT OR REPLACE INTO habit_ticks(habit_id,day,value,ts,device)"
-                                 " VALUES(?,?,?,?,?)", (m.group(1), day, body.get("value", 1),
-                                                        fmt_ts(now()), body.get("device") or HOSTNAME))
+                    db().execute(
+                        "INSERT OR REPLACE INTO habit_ticks(habit_id,day,value,ts,device)"
+                        " VALUES(?,?,?,?,?)",
+                        (
+                            m.group(1),
+                            day,
+                            body.get("value", 1),
+                            fmt_ts(now()),
+                            body.get("device") or HOSTNAME,
+                        ),
+                    )
                 return self._send(200, {"ok": True, "day": day})
             if p == "/api/0/kt/sessions":
-                cur = db().execute("INSERT INTO sessions(kind,tag,device,start,end,notes) VALUES(?,?,?,?,?,?)",
-                                   (body.get("kind", "focus"), body.get("tag"), body.get("device") or HOSTNAME,
-                                    fmt_ts(parse_ts(body["start"])),
-                                    fmt_ts(parse_ts(body["end"])) if body.get("end") else None,
-                                    body.get("notes")))
+                cur = db().execute(
+                    "INSERT INTO sessions(kind,tag,device,start,end,notes) VALUES(?,?,?,?,?,?)",
+                    (
+                        body.get("kind", "focus"),
+                        body.get("tag"),
+                        body.get("device") or HOSTNAME,
+                        fmt_ts(parse_ts(body["start"])),
+                        fmt_ts(parse_ts(body["end"])) if body.get("end") else None,
+                        body.get("notes"),
+                    ),
+                )
                 return self._send(200, {"id": cur.lastrowid})
             return self._send(404, {"error": "no route", "path": p})
         except Exception as e:  # noqa: BLE001
@@ -448,7 +607,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         if not self._authed():
             return self._send(401, {"error": "unauthorized"})
-        m = re.fullmatch(r"/api/0/buckets/([^/]+)", urlparse(self.path).path.rstrip("/"))
+        m = re.fullmatch(
+            r"/api/0/buckets/([^/]+)", urlparse(self.path).path.rstrip("/")
+        )
         if m:
             db().execute("DELETE FROM events WHERE bucket_id=?", (m.group(1),))
             db().execute("DELETE FROM buckets WHERE id=?", (m.group(1),))
@@ -475,8 +636,10 @@ def streak(days: list) -> int:
 
 def main():
     db()
-    print(f"{VERSION} -> http://{HOST}:{PORT}  db={DB_PATH}  auth={'on' if TOKEN else 'OFF'}",
-          flush=True)
+    print(
+        f"{VERSION} -> http://{HOST}:{PORT}  db={DB_PATH}  auth={'on' if TOKEN else 'OFF'}",
+        flush=True,
+    )
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 
