@@ -26,17 +26,35 @@ if [ "${MISSING+x}" ]; then
 fi
 
 mkdir -p "$SHARE" "$BIN" "$CONF" "$DATA" "$UNITS"
-cp -r "$SRC/server" "$SRC/web" "$SRC/cli" "$SRC/linux" "$SRC/tools" "$SRC/importers" "$SHARE/" 2>/dev/null || true
-chmod +x "$SHARE"/*/*.py 2>/dev/null || true
+# Every component ships, including hooks/ (the budget enforcement loop, which is the
+# whole argument for running this over upstream AW) and android/ (staged here so the
+# phone scripts can be copied to Termux). No 2>/dev/null || true: a missing source dir
+# is a broken install, and silently "succeeding" is how the budget hook shipped dead.
+for d in server web cli linux tools importers hooks android; do
+  [ -d "$SRC/$d" ] || { echo "install: missing source dir $SRC/$d" >&2; exit 1; }
+  cp -r "$SRC/$d" "$SHARE/"
+done
+chmod +x "$SHARE"/*/*.py "$SHARE"/*/*.sh
 ln -sf "$SHARE/cli/ktq.py" "$BIN/ktq"
 
 # ---- config (generated once, never overwritten)
 if [ ! -f "$CONF/env" ]; then
   TOKEN="$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 32)"
   BINDHOST=127.0.0.1
-  if [ "${KT_BIND:-}" = "tailscale" ] && command -v tailscale >/dev/null; then
-    BINDHOST="$(tailscale ip -4 2>/dev/null | head -1)"
-    [ -n "$BINDHOST" ] || BINDHOST=127.0.0.1
+  # If the tailnet bind was explicitly asked for, failing to get an IP is an error, not
+  # a reason to quietly bind loopback -- that looks like a working install while the
+  # phone can never reach it.
+  if [ "${KT_BIND:-}" = "tailscale" ]; then
+    command -v tailscale >/dev/null || {
+      echo "install: KT_BIND=tailscale but tailscale is not installed" >&2; exit 1; }
+    # '|| true': tailscale exits non-zero when logged out, and under `set -e` a bare
+    # assignment from a failing substitution kills the script before the message below.
+    BINDHOST="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+    [ -n "$BINDHOST" ] || {
+      echo "install: KT_BIND=tailscale but no tailscale IPv4 address." >&2
+      echo "  'tailscale status' probably says Logged out. Run: sudo tailscale up" >&2
+      echo "  Then re-run this installer. Refusing to silently bind loopback." >&2
+      exit 1; }
   fi
   cat > "$CONF/env" <<EOF
 KT_DB=$DATA/kt.db
@@ -96,6 +114,40 @@ RestartSec=5
 WantedBy=graphical-session.target
 EOF
 
+# The budget hook is what turns this from a diary into a controller. Installed and
+# ready, but left DISABLED: per docs/07-adversarial.md the first budget should be a
+# notification you cannot unsee, not a lock you resent -- edit budgets.json, then
+#   systemctl --user enable --now kuhytrack-budget.timer
+cat > "$UNITS/kuhytrack-budget.service" <<EOF
+[Unit]
+Description=kuhytrack daily budget enforcement
+After=kuhytrack.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=$CONF/env
+# exit 10 means "a budget was blown and its action ran" -- success, not failure
+SuccessExitStatus=0 10
+ExecStart=/usr/bin/python3 $SHARE/hooks/kt-budget.py --enforce
+EOF
+
+cat > "$UNITS/kuhytrack-budget.timer" <<EOF
+[Unit]
+Description=run kuhytrack budget enforcement every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# A systemd --user unit does not inherit DISPLAY/XAUTHORITY unless the session exports
+# them. Without DISPLAY the watcher's X11 window source silently bails and you get
+# AFK-only data. Harmless to run when they are already present (they are, under i3).
+systemctl --user import-environment DISPLAY XAUTHORITY 2>/dev/null || true
+
 systemctl --user daemon-reload
 systemctl --user enable --now kuhytrack.service
 systemctl --user enable --now kuhytrack-watcher.service
@@ -115,6 +167,9 @@ cat <<EOF
   logs      : journalctl --user -u kuhytrack-watcher -f
   phone     : copy android/kt-watcher-android.sh to Termux, then
               printf 'KT_URL=http://%s:5600\\nKT_TOKEN=%s\\nKT_DEVICE=pixel6a\\n' "\$(tailscale ip -4 | head -1)" "$KT_TOKEN" > ~/.config/kuhytrack/env
+  budgets   : $CONF/budgets.json, then  systemctl --user enable --now kuhytrack-budget.timer
+              (installed but disabled — start with a notification, not a lock)
+  import AW : python3 $SHARE/importers/kt-import.py awdb --file ~/.local/share/activitywatch/aw-server/peewee-sqlite.v2.db
   demo data : python3 $SHARE/tools/kt-seed.py --days 3   (buckets suffixed _demo, delete any time)
 
 EOF
