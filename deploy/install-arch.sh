@@ -74,7 +74,7 @@ KT_HOST=$BINDHOST
 KT_PORT=5600
 KT_TOKEN=$TOKEN
 KT_WEB=$SHARE/web
-KT_URL=http://127.0.0.1:5600
+KT_URL=http://$BINDHOST:5600
 KT_POLL=5
 KT_AFK_TIMEOUT=180
 # KT_EXCLUDE_TITLE_RE=(private|Incognito|KeePass|password)
@@ -95,7 +95,11 @@ else
       echo "  'tailscale status' probably says Logged out. Run: sudo tailscale up" >&2
       echo "  Then re-run this installer. Refusing to silently keep the old bind." >&2
       exit 1; }
+    # KT_URL must follow KT_HOST: the server stops listening on loopback once it binds
+    # the tailnet address, so leaving KT_URL at 127.0.0.1 breaks ktq, kt-budget and the
+    # importers with "connection refused" on an otherwise healthy install.
     sed -i "s|^KT_HOST=.*|KT_HOST=$NEWHOST|" "$CONF/env"
+    sed -i "s|^KT_URL=.*|KT_URL=http://$NEWHOST:5600|" "$CONF/env"
     say "rebound to $NEWHOST in $CONF/env"
   else
     say "kept existing $CONF/env"
@@ -180,6 +184,11 @@ systemctl --user import-environment DISPLAY XAUTHORITY 2>/dev/null || true
 systemctl --user daemon-reload
 systemctl --user enable --now kuhytrack.service
 systemctl --user enable --now kuhytrack-watcher.service
+# 'enable --now' does nothing to an already-running unit, so on a re-run the services
+# keep executing the OLD code with the OLD environment -- a rewritten KT_HOST or an
+# updated kt_server.py would silently not take effect, and the header's promise to
+# "restart units" would be false.
+systemctl --user restart kuhytrack.service kuhytrack-watcher.service
 loginctl enable-linger "$USER" >/dev/null 2>&1 || say "note: run 'sudo loginctl enable-linger $USER' to keep the server up when logged out"
 
 sleep 1
