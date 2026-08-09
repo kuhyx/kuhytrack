@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>kuhytrack</title>
+<!--
+  Design note: this is a chart recorder, not a SaaS dashboard. Engineering-paper
+  ground, ink rules, one oxide pen line at "now". Two device colours are the whole
+  point of the product, so they are the only saturated things on the page.
+  No webfonts on purpose: the server is meant to run tailnet-only and offline.
+-->
+<style>
+  :root{
+    --paper:#E7EBEA; --paper-2:#F2F5F4; --grid:#CBD5D3; --ink:#12252B;
+    --ink-2:#4A6068; --rule:#A9BAB7;
+    --dev-1:#14747A;   /* linux */
+    --dev-2:#B4432A;   /* phone */
+    --dev-3:#5C6BA8; --dev-4:#7A6A2F;
+    --pen:#C8321E;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","DejaVu Sans Mono",monospace;
+    --sans:ui-sans-serif,system-ui,"Inter","Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--paper); color:var(--ink); font-family:var(--sans);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),
+                     linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:100% 28px,28px 100%; background-position:-1px -1px;
+    padding:18px 14px 60px; -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:900px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    border-bottom:2px solid var(--ink);padding-bottom:8px;margin-bottom:4px}
+  h1{font-family:var(--mono);font-size:15px;font-weight:700;letter-spacing:.22em;
+     text-transform:uppercase;margin:0}
+  .total{font-family:var(--mono);font-size:30px;font-weight:700;letter-spacing:-.02em;margin-left:auto}
+  .sub{font-family:var(--mono);font-size:11px;color:var(--ink-2);letter-spacing:.08em}
+  nav{display:flex;gap:6px;margin:14px 0 22px;flex-wrap:wrap}
+  button{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    background:transparent;border:1px solid var(--rule);color:var(--ink-2);
+    padding:6px 11px;cursor:pointer;border-radius:0}
+  button:hover{border-color:var(--ink);color:var(--ink)}
+  button[aria-pressed=true]{background:var(--ink);color:var(--paper-2);border-color:var(--ink)}
+  button:focus-visible{outline:2px solid var(--pen);outline-offset:2px}
+  h2{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+     color:var(--ink-2);margin:26px 0 10px;font-weight:600}
+
+  /* --- signature: the day tape --- */
+  .tape{margin-bottom:18px}
+  .tape-head{display:flex;justify-content:space-between;align-items:baseline;
+    font-family:var(--mono);font-size:12px;margin-bottom:5px}
+  .dev{font-weight:700;letter-spacing:.08em}
+  .strip{position:relative;height:44px;background:var(--paper-2);
+    border:1px solid var(--rule);overflow:hidden}
+  .blk{position:absolute;top:0;bottom:0;min-width:1px}
+  .pen{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--pen);z-index:3}
+  .pen::before{content:"";position:absolute;top:0;left:-3px;width:8px;height:8px;
+    background:var(--pen);border-radius:50%}
+  .ticks{position:relative;height:16px;margin-top:2px;font-family:var(--mono);font-size:9px;color:var(--ink-2)}
+  .ticks span{position:absolute;transform:translateX(-50%)}
+  .ticks i{position:absolute;top:-3px;width:1px;height:4px;background:var(--rule)}
+
+  /* --- lists --- */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+  @media(max-width:640px){.cols{grid-template-columns:1fr;gap:8px}
+    .total{font-size:24px}body{padding:14px 10px 50px}}
+  .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;
+    font-family:var(--mono);font-size:12px;padding:3px 0;border-bottom:1px dotted var(--rule)}
+  .row .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .v{color:var(--ink-2)}
+  .meter{grid-column:1/-1;height:3px;background:var(--rule)}
+  .meter i{display:block;height:100%}
+  .empty{font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--ink-2);
+    border:1px dashed var(--rule);padding:16px;background:var(--paper-2)}
+  .empty code{color:var(--ink);white-space:pre-wrap;word-break:break-all}
+  footer{margin-top:34px;border-top:1px solid var(--rule);padding-top:8px;
+    font-family:var(--mono);font-size:10px;color:var(--ink-2);letter-spacing:.06em;
+    display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .legend{display:flex;gap:14px;font-family:var(--mono);font-size:10px;color:var(--ink-2);flex-wrap:wrap}
+  .legend b{display:inline-block;width:9px;height:9px;margin-right:5px;vertical-align:-1px}
+  @media(prefers-reduced-motion:no-preference){
+    .pen::before{animation:blink 2.4s ease-in-out infinite}
+    @keyframes blink{50%{opacity:.35}}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>kuhytrack</h1>
+    <span class="sub" id="range">loading</span>
+    <span class="total" id="total">—</span>
+  </header>
+  <nav id="nav">
+    <button data-off="0" aria-pressed="true">today</button>
+    <button data-off="-1">yesterday</button>
+    <button data-off="-2">2 days ago</button>
+    <button data-days="7">last 7 days</button>
+    <button data-days="30">last 30 days</button>
+    <button id="tok">set token</button>
+  </nav>
+  <div id="out"></div>
+  <footer>
+    <span id="devs"></span>
+    <span>refreshes every 60s · <span id="clock"></span></span>
+  </footer>
+</div>
+<script>
+const PAL=['--dev-1','--dev-2','--dev-3','--dev-4'];
+const S=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let state={off:0,days:null};
+
+function tok(){return localStorage.getItem('kt_token')||''}
+async function api(p){
+  const h=tok()?{Authorization:'Bearer '+tok()}:{};
+  const r=await fetch(p,{headers:h});
+  if(r.status===401){throw new Error('401 — set token')}
+  if(!r.ok) throw new Error(r.status+' '+await r.text());
+  return r.json();
+}
+const hms=s=>{s=Math.round(s);const h=s/3600|0,m=(s%3600)/60|0;
+  return h?`${h}h${String(m).padStart(2,'0')}`:(m?`${m}m`:`${s}s`)};
+const esc=s=>String(s??'').replace(/[<&>]/g,c=>({'<':'&lt;','&':'&amp;','>':'&gt;'}[c]));
+
+function window_(){
+  if(state.days){const e=new Date();return[new Date(e-state.days*864e5),e,false]}
+  const d=new Date();d.setDate(d.getDate()+state.off);d.setHours(0,0,0,0);
+  return[d,new Date(d.getTime()+864e5),true];
+}
+const colorOf=(devs,d)=>S(PAL[devs.indexOf(d)%PAL.length]);
+function hashHue(s){let h=0;for(const c of s)h=(h*31+c.charCodeAt(0))%360;return h}
+
+function tape(dev,evs,start,end,devs){
+  const span=end-start, base=colorOf(devs,dev);
+  const blocks=evs.filter(e=>e.type==='currentwindow'&&e.duration>0).map(e=>{
+    const t0=new Date(e.timestamp), t1=new Date(+t0+e.duration*1000);
+    const l=Math.max(0,(t0-start)/span*100), w=Math.min(100-l,(t1-t0)/span*100);
+    return `<div class="blk" style="left:${l}%;width:${Math.max(w,.12)}%;background:${base};
+      opacity:${.45+.55*Math.min(1,e.duration/900)}" title="${esc(e.app)} · ${hms(e.duration)}"></div>`;
+  }).join('');
+  const secs=evs.filter(e=>e.type==='currentwindow').reduce((a,e)=>a+e.duration,0);
+  const now=new Date(), pen=(now>=start&&now<=end)
+    ? `<div class="pen" style="left:${(now-start)/span*100}%"></div>`:'';
+  const ticks=[0,6,12,18,24].map(h=>{
+    const l=h/24*100;
+    return `<i style="left:${l}%"></i><span style="left:${l}%">${String(h).padStart(2,'0')}</span>`}).join('');
+  return `<div class="tape">
+    <div class="tape-head"><span class="dev" style="color:${base}">${esc(dev)}</span>
+      <span>${hms(secs)}</span></div>
+    <div class="strip">${blocks}${pen}</div>
+    <div class="ticks">${ticks}</div></div>`;
+}
+
+function list(title,items,total,color){
+  const mx=Math.max(...items.map(i=>i[1]),1);
+  return `<h2>${title}</h2>`+items.map(([n,v])=>`<div class="row">
+      <span class="n">${esc(n)}</span><span class="v">${hms(v)}</span>
+      <span class="meter"><i style="width:${v/mx*100}%;background:${color(n)}"></i></span>
+    </div>`).join('');
+}
+
+async function render(){
+  const [start,end,isDay]=window_();
+  const qs=`start=${start.toISOString()}&end=${end.toISOString()}`;
+  const out=document.getElementById('out');
+  try{
+    const [sum,tl]=await Promise.all([api(`/api/0/kt/summary?${qs}&top=12`),
+                                      api(`/api/0/kt/timeline?${qs}&limit=6000`)]);
+    const union=sum.union_seconds??sum.total_seconds;
+    const t=document.getElementById('total');
+    t.textContent=hms(union);
+    t.title='wall-clock time any device was active';
+    document.getElementById('range').textContent=(isDay
+      ? start.toDateString().toLowerCase() : `${state.days} days to now`)
+      + (Math.round(union)!==Math.round(sum.total_seconds)
+         ? ` · ${hms(sum.total_seconds)} device-hours` : '');
+    const devs=sum.devices;
+    document.getElementById('devs').innerHTML=devs.length
+      ? `<span class="legend">`+devs.map(d=>`<span><b style="background:${colorOf(devs,d)}"></b>${esc(d)}</span>`).join('')+`</span>`:'';
+    if(!devs.length){
+      out.innerHTML=`<div class="empty">No events in this window.
+Point a watcher at this server:
+<code>KT_URL=http://$(hostname -I | awk '{print $1}'):5600 python3 kt-watcher-linux.py</code></div>`;
+      return;
+    }
+    const byDev={};tl.forEach(e=>(byDev[e.device]=byDev[e.device]||[]).push(e));
+    out.innerHTML =
+      (isDay?devs.map(d=>tape(d,byDev[d]||[],start,end,devs)).join(''):'')
+      + `<div class="cols"><div>`
+      + list('what you used',Object.entries(sum.top_apps),sum.total_seconds,
+             n=>{const d=devs.find(x=>(sum.per_device[x]?.apps||{})[n]);return colorOf(devs,d||devs[0])})
+      + `</div><div>`
+      + list('where you were',devs.map(d=>[d,sum.per_device[d]?.seconds||0]),
+             sum.total_seconds,n=>colorOf(devs,n))
+      + (Object.keys(sum.per_type||{}).length? list('signal types',
+          Object.entries(sum.per_type).sort((a,b)=>b[1]-a[1]),0,
+          n=>`hsl(${hashHue(n)} 18% 42%)`):'')
+      + `</div></div>`;
+  }catch(e){
+    out.innerHTML=`<div class="empty">Request failed: ${esc(e.message)}
+${e.message.startsWith('401')?'Press “set token” and paste the value of KT_TOKEN from the server.':'Check that kt_server.py is running and reachable.'}</div>`;
+  }
+}
+document.getElementById('nav').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.id==='tok'){const v=prompt('KT_TOKEN',tok());if(v!==null)localStorage.setItem('kt_token',v.trim());return render()}
+  [...document.querySelectorAll('#nav button')].forEach(x=>x.setAttribute('aria-pressed',x===b));
+  state={off:+(b.dataset.off||0),days:b.dataset.days?+b.dataset.days:null};render();
+});
+setInterval(()=>{document.getElementById('clock').textContent=new Date().toTimeString().slice(0,8)},1000);
+setInterval(render,60000);render();
+</script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+{
+  "_meta": {
+    "collected": "2026-08-08",
+    "source": "github REST API + repo pages, fetched live during this run",
+    "fields": {
+      "capture": "auto = software observes you; manual = you press start/stop; derived = another tool feeds it",
+      "android": "what actually runs on a phone, not what the README aspires to",
+      "verdict": "why it is or is not the thing asked for: ActivityWatch, mine, cross phone+linux"
+    }
+  },
+  "projects": [
+    {
+      "name": "ActivityWatch",
+      "repo": "ActivityWatch/activitywatch",
+      "stars": 18527, "forks": 977, "license": "MPL-2.0",
+      "lang": "Python + Rust + Vue", "last_commit": "2026-08-06",
+      "category": "automatic activity tracker",
+      "capture": "auto", "server": "self-hosted, localhost by default",
+      "linux": "aw-watcher-window (X11 good, Wayland patchy), aw-watcher-afk (X11 only in practice)",
+      "android": "aw-android, Kotlin, bundles aw-server-rust locally; UsageStats based",
+      "api": "REST /api/0 + aw-query DSL", "storage": "sqlite (peewee or rust)",
+      "cross_device": "weak: each device holds its own server; aw-sync is file-sync based and Android is not part of it",
+      "verdict": "the reference design and the right data model. Its actual gap is exactly the one asked about."
+    },
+    {
+      "name": "aw-server-rust",
+      "repo": "ActivityWatch/aw-server-rust",
+      "stars": 310, "forks": 95, "license": "MPL-2.0", "lang": "Rust",
+      "last_commit": "2026-08-03", "category": "server component",
+      "capture": "n/a", "server": "yes", "linux": "yes", "android": "embedded in aw-android",
+      "api": "same REST API", "storage": "sqlite",
+      "cross_device": "single-instance; sync is out of scope",
+      "verdict": "drop-in alternative to the kuhytrack server if you want Rust instead of 600 lines of Python. Same API."
+    },
+    {
+      "name": "aw-android",
+      "repo": "ActivityWatch/aw-android",
+      "stars": 253, "forks": 51, "license": "MPL-2.0", "lang": "Kotlin",
+      "last_commit": "2026-08-06", "open_issues": 84, "category": "mobile watcher",
+      "capture": "auto (UsageStatsManager + unlock events)", "server": "runs one on localhost:5600",
+      "linux": "n/a", "android": "yes, no root needed",
+      "api": "exposes the standard REST API on the phone's loopback",
+      "cross_device": "no push to a remote server",
+      "verdict": "keep it installed even if you build your own: it is the only no-root legal source of foreground-app data, and Termux can read its loopback API. That is the kt-bridge-awandroid.sh path."
+    },
+    {
+      "name": "beaverhabits",
+      "repo": "daya0576/beaverhabits",
+      "stars": 1812, "forks": 73, "license": "BSD-3-Clause", "lang": "Python (NiceGUI)",
+      "last_commit": "2026-07-27", "category": "habit tracker",
+      "capture": "manual", "server": "self-hosted web app, PWA installable",
+      "linux": "browser", "android": "PWA / installable web app",
+      "api": "limited; storage is per-user JSON-ish records",
+      "cross_device": "yes, trivially — it is one server and a browser",
+      "verdict": "different product. Answers 'did I do the thing' not 'where did my hours go'. Its cross-device story works precisely because it never touches the OS."
+    },
+    {
+      "name": "focus_flow_cloud",
+      "repo": "francesco-gaglione/focus_flow_cloud",
+      "stars": 43, "forks": 2, "license": "none declared", "lang": "Rust (Axum) + Flutter",
+      "last_commit": "2026-06-16", "category": "pomodoro / focus sessions",
+      "capture": "manual", "server": "self-hosted", "linux": "web/Flutter", "android": "Flutter app",
+      "api": "REST", "cross_device": "yes by design",
+      "verdict": "43 stars, one author, no LICENSE file — using it means adopting it. Its session concept is worth 30 lines in your own schema, not a dependency."
+    },
+    {
+      "name": "OpenHabitTracker",
+      "repo": "Jinjinov/OpenHabitTracker",
+      "stars": 268, "forks": 21, "license": "GPL-3.0", "lang": "C# .NET 9 Blazor/MAUI",
+      "last_commit": "2026-08-07", "category": "habit tracker + notes",
+      "capture": "manual", "server": "optional (works local-first with IndexedDB/SQLite)",
+      "linux": "yes", "android": "yes (MAUI)",
+      "api": "own sync API", "cross_device": "yes, local-first with optional sync",
+      "verdict": "the best-executed cross-platform story of the list, but it is .NET/MAUI. On Arch that is a toolchain you would maintain forever for a habit checkbox."
+    },
+    {
+      "name": "solidtime",
+      "repo": "solidtime-io/solidtime",
+      "stars": 8846, "forks": 495, "license": "AGPL-3.0", "lang": "PHP (Laravel) + Vue",
+      "last_commit": "2026-08-06", "category": "billable time tracking",
+      "capture": "manual", "server": "self-hosted (docker, needs php/postgres/redis)",
+      "linux": "browser + desktop app", "android": "browser",
+      "api": "REST, documented", "cross_device": "yes",
+      "verdict": "built for invoicing clients and teams. You are not billing anyone. Heaviest stack on the list for the least relevant feature set."
+    },
+    {
+      "name": "timetagger",
+      "repo": "almarklein/timetagger",
+      "stars": 1769, "forks": 163, "license": "GPL-3.0", "lang": "Python (asgineer/PScript)",
+      "last_commit": "2026-05-17", "category": "manual time tracking with tags",
+      "capture": "manual", "server": "self-hosted, single binary-ish",
+      "linux": "browser (PWA)", "android": "PWA",
+      "api": "REST with a sync-friendly record model", "cross_device": "yes — its sync model is genuinely good",
+      "verdict": "the cleanest self-hostable manual tracker, and its offline-first record sync is worth reading. But it will never tell you what you did without you telling it."
+    },
+    {
+      "name": "traggo",
+      "repo": "traggo/server",
+      "stars": 1616, "forks": 92, "license": "GPL-3.0", "lang": "Go + React",
+      "last_commit": "2026-07-31", "category": "tag-based manual time tracking",
+      "capture": "manual", "server": "single Go binary + sqlite", "linux": "browser", "android": "browser",
+      "api": "GraphQL", "cross_device": "yes",
+      "verdict": "single binary + sqlite is the right deployment shape, and the tag model beats project/task hierarchies. Still manual. GraphQL for this is overkill."
+    },
+    {
+      "name": "wakapi",
+      "repo": "muety/wakapi",
+      "stars": 4398, "forks": 294, "license": "MIT", "lang": "Go",
+      "last_commit": "2026-08-03", "category": "coding-activity backend",
+      "capture": "auto, but only inside editors", "server": "single Go binary + sqlite/postgres",
+      "linux": "wakatime plugin in your editor", "android": "nothing meaningful",
+      "api": "WakaTime-compatible REST", "cross_device": "yes — every editor pushes to one server",
+      "verdict": "the only other auto-capture tool here, and it already solves the multi-device problem the right way (dumb clients, one server). Run it alongside; import it with kt-import.py wakapi. It cannot see anything outside your editor."
+    },
+    {
+      "name": "Ziit",
+      "repo": "0pandadev/ziit",
+      "stars": 249, "forks": 11, "license": "check repo", "lang": "TypeScript (Nuxt)",
+      "last_commit": "2026-07-02", "category": "coding-activity backend",
+      "capture": "auto, editor only", "server": "self-hosted (Nuxt + Postgres)",
+      "linux": "VS Code extension", "android": "none",
+      "api": "own + wakatime-ish", "cross_device": "yes",
+      "verdict": "a younger, prettier wakapi with 18x fewer stars and a heavier runtime. If you want editor stats, wakapi is the lower-risk pick."
+    }
+  ]
+}
