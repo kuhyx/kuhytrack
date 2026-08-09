@@ -4,16 +4,25 @@ the dashboard before you've collected anything real. Safe: writes to buckets suf
 _demo unless --real. Usage: KT_URL=... KT_TOKEN=... python3 kt-seed.py [--days 3]"""
 
 import argparse
+import importlib.util
 import json
 import random
-import sys
 import urllib.request
 from datetime import datetime, time as dtime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cli"))
-import ktconf  # noqa: E402  (path must be set first; stdlib-only, no package install)
 
+def _load_ktconf():
+    """Load the shared config module by path -- see cli/ktconf.py."""
+    spec = importlib.util.spec_from_file_location(
+        "ktconf", Path(__file__).resolve().parent.parent / "cli" / "ktconf.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+ktconf = _load_ktconf()
 URL = ktconf.url()
 TOKEN = ktconf.token()
 ap = argparse.ArgumentParser()

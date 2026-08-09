@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import importlib.util
 import json
 import sys
 import urllib.error
@@ -23,9 +24,19 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cli"))
-import ktconf  # noqa: E402  (path must be set first; stdlib-only, no package install)
 
+def _load_ktconf():
+    """Load the shared config module by path -- see cli/ktconf.py. Loading by path keeps
+    the import at top-of-file; a sys.path insert would not."""
+    spec = importlib.util.spec_from_file_location(
+        "ktconf", Path(__file__).resolve().parent.parent / "cli" / "ktconf.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+ktconf = _load_ktconf()
 KT = ktconf.url()
 TOKEN = ktconf.token()
 

@@ -18,6 +18,7 @@ Env: KT_URL (default http://127.0.0.1:5600), KT_TOKEN
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import sys
 import urllib.parse
@@ -25,9 +26,20 @@ import urllib.request
 from datetime import datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import ktconf  # noqa: E402  (path must be set first; stdlib-only, no package install)
 
+def _load_ktconf(rel: str = "ktconf.py"):
+    """Load the shared config module by path. These tools are standalone scripts run by
+    absolute path (systemd, ~/.local/bin symlink), so a plain import will not find a
+    sibling module -- and a sys.path insert would force the import below top-of-file."""
+    spec = importlib.util.spec_from_file_location(
+        "ktconf", Path(__file__).resolve().parent / rel
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+ktconf = _load_ktconf()
 URL = ktconf.url()
 TOKEN = ktconf.token()
 

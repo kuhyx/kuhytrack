@@ -8,6 +8,11 @@ writes makes the documented command work as documented.
 
 Precedence: real environment first (so KT_URL=... overrides for one-off runs), then the
 config file, then the loopback default. stdlib only, like everything else here.
+
+The other tools live in sibling directories and are run as standalone scripts by
+absolute path (systemd, a ~/.local/bin symlink), so they cannot `import ktconf`
+normally. They load it with `load()` below rather than inserting onto sys.path, which
+would put an import below top-of-file and need a lint suppression at every call site.
 """
 
 from __future__ import annotations
