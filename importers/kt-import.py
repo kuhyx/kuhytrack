@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-import os
 import sys
 import urllib.error
 import urllib.parse
@@ -24,8 +23,11 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-KT = os.environ.get("KT_URL", "http://127.0.0.1:5600").rstrip("/")
-TOKEN = os.environ.get("KT_TOKEN", "")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cli"))
+import ktconf  # noqa: E402  (path must be set first; stdlib-only, no package install)
+
+KT = ktconf.url()
+TOKEN = ktconf.token()
 
 
 def kt_call(path, method="GET", body=None):

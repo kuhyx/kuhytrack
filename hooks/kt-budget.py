@@ -13,6 +13,7 @@ just a shell command, so it can equally send a notification or kill a process.
 Config: ~/.config/kuhytrack/budgets.json — written with defaults on first run.
 Exit codes: 0 all within budget, 10 at least one blown (useful in a timer/hook).
 """
+
 from __future__ import annotations
 
 import json
@@ -22,33 +23,45 @@ import sys
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime, time as dtime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-KT = os.environ.get("KT_URL", "http://127.0.0.1:5600").rstrip("/")
-TOKEN = os.environ.get("KT_TOKEN", "")
-CONF = Path(os.environ.get("KT_BUDGETS",
-                           Path.home() / ".config/kuhytrack/budgets.json"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "cli"))
+import ktconf  # noqa: E402  (path must be set first; stdlib-only, no package install)
+
+KT = ktconf.url()
+TOKEN = ktconf.token()
+CONF = Path(
+    os.environ.get("KT_BUDGETS", Path.home() / ".config/kuhytrack/budgets.json")
+)
 
 DEFAULTS = {
     "_comment": "match is a list of substrings tested against the app/package name. "
-                "minutes is the daily budget. action runs once when it is first exceeded "
-                "today; {app} {used} {budget} are substituted.",
+    "minutes is the daily budget. action runs once when it is first exceeded "
+    "today; {app} {used} {budget} are substituted.",
     "budgets": [
-        {"name": "doomscroll", "device": "pixel6a",
-         "match": ["reddit", "youtube", "twitter", "instagram", "tiktok"],
-         "minutes": 60,
-         "action": "curl -sf -X POST http://127.0.0.1:8765/lock -d 'reason={app} {used}m'"},
-        {"name": "browser", "device": "arch", "match": ["firefox", "chromium"],
-         "minutes": 120,
-         "action": "notify-send 'kuhytrack' '{app}: {used}m of {budget}m used'"},
+        {
+            "name": "doomscroll",
+            "device": "pixel6a",
+            "match": ["reddit", "youtube", "twitter", "instagram", "tiktok"],
+            "minutes": 60,
+            "action": "curl -sf -X POST http://127.0.0.1:8765/lock -d 'reason={app} {used}m'",
+        },
+        {
+            "name": "browser",
+            "device": "arch",
+            "match": ["firefox", "chromium"],
+            "minutes": 120,
+            "action": "notify-send 'kuhytrack' '{app}: {used}m of {budget}m used'",
+        },
     ],
 }
 
 
 def api(path):
     req = urllib.request.Request(
-        KT + path, headers={"Authorization": f"Bearer {TOKEN}"} if TOKEN else {})
+        KT + path, headers={"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
+    )
     with urllib.request.urlopen(req, timeout=20) as r:
         return json.loads(r.read())
 
@@ -62,7 +75,9 @@ def load_conf():
     if not CONF.exists():
         CONF.parent.mkdir(parents=True, exist_ok=True)
         CONF.write_text(json.dumps(DEFAULTS, indent=2))
-        print(f"wrote default budgets to {CONF} — edit it, then re-run", file=sys.stderr)
+        print(
+            f"wrote default budgets to {CONF} — edit it, then re-run", file=sys.stderr
+        )
     return json.loads(CONF.read_text())
 
 
@@ -73,27 +88,43 @@ def fired_path(name):
 def run(enforce: bool) -> int:
     conf = load_conf()
     start, end = today_window()
-    qs = urllib.parse.urlencode({"start": start.isoformat(), "end": end.isoformat(), "top": 200})
+    qs = urllib.parse.urlencode(
+        {"start": start.isoformat(), "end": end.isoformat(), "top": 200}
+    )
     s = api("/api/0/kt/summary?" + qs)
     blown = 0
     for b in conf["budgets"]:
-        pool = (s["per_device"].get(b["device"], {}) or {}).get("apps", {}) if b.get("device") \
+        pool = (
+            (s["per_device"].get(b["device"], {}) or {}).get("apps", {})
+            if b.get("device")
             else s["top_apps"]
-        used = sum(v for k, v in pool.items()
-                   if any(m.lower() in k.lower() for m in b["match"]))
+        )
+        used = sum(
+            v
+            for k, v in pool.items()
+            if any(m.lower() in k.lower() for m in b["match"])
+        )
         used_m, budget_m = used / 60, b["minutes"]
         over = used_m >= budget_m
         bar = "!" if over else "."
-        print(f"  {bar} {b['name']:<14} {used_m:6.1f}m / {budget_m}m"
-              f"  [{b.get('device', 'all')}]")
+        print(
+            f"  {bar} {b['name']:<14} {used_m:6.1f}m / {budget_m}m"
+            f"  [{b.get('device', 'all')}]"
+        )
         if not over:
             continue
         blown += 1
         f = fired_path(b["name"])
         if enforce and not f.exists():
-            top = max(((k, v) for k, v in pool.items()
-                       if any(m.lower() in k.lower() for m in b["match"])),
-                      key=lambda kv: kv[1], default=("?", 0))[0]
+            top = max(
+                (
+                    (k, v)
+                    for k, v in pool.items()
+                    if any(m.lower() in k.lower() for m in b["match"])
+                ),
+                key=lambda kv: kv[1],
+                default=("?", 0),
+            )[0]
             cmd = b["action"].format(app=top, used=int(used_m), budget=budget_m)
             print(f"    -> {cmd}")
             subprocess.run(cmd, shell=True, check=False)
