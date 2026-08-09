@@ -43,15 +43,38 @@ push_bucket() { # push_bucket <aw_bucket_id>
     --data "{\"client\":\"kt-bridge-awandroid\",\"type\":\"${btype}\",\"hostname\":\"${KT_DEVICE}\",\"device\":\"${KT_DEVICE}\"}" \
     "${KT_URL}/api/0/buckets/${dst}" >/dev/null || return 1
 
-  events=$(curl -sf -m 20 "${AW_URL}/api/0/buckets/${src}/events?limit=2000") || return 1
+  # Ask the server for everything after our watermark rather than the newest N events.
+  # aw-server returns events NEWEST-first, so a bare limit=2000 against a bucket that
+  # has already backfilled (aw-android imports ~8 days of UsageStats on first run --
+  # 6473 events here) takes the newest 2000, records max(those) as the watermark, and
+  # strands the older 4473 forever. `start` + a high limit makes the first sync total.
+  events=$(curl -sf -m 60 --get \
+    --data-urlencode "start=${since}" --data-urlencode "limit=50000" \
+    "${AW_URL}/api/0/buckets/${src}/events") || return 1
+  # `start` is inclusive, so drop the watermark event itself to avoid re-pushing it.
   new=$(printf '%s' "$events" | jq --arg s "$since" '[.[] | select(.timestamp > $s)]')
   n=$(printf '%s' "$new" | jq 'length')
   [ "$n" -eq 0 ] && return 0
 
   # strip local ids so the server assigns its own
   payload=$(printf '%s' "$new" | jq '[.[] | {timestamp,duration,data}]')
-  curl -sf -m 30 -X POST -H 'Content-Type: application/json' $(auth) \
-    --data "$payload" "${KT_URL}/api/0/buckets/${dst}/events" >/dev/null || return 1
+  # The server echoes every inserted event back, which is ~1.5 MB for a first sync of a
+  # backfilled bucket. Send in chunks and judge success on the HTTP status alone -- a
+  # long body over a slow phone link was being reported as a failed push even though
+  # the events had landed. -m scales with chunk size rather than a flat 30s.
+  total=0
+  for off in $(seq 0 500 "$((n - 1))"); do
+    chunk=$(printf '%s' "$payload" | jq --argjson o "$off" '.[$o:$o+500]')
+    code=$(curl -s -m 120 -o /dev/null -w '%{http_code}' \
+      -X POST -H 'Content-Type: application/json' $(auth) \
+      --data "$chunk" "${KT_URL}/api/0/buckets/${dst}/events")
+    case "$code" in
+      2*) total=$((total + $(printf '%s' "$chunk" | jq 'length'))) ;;
+      *)  echo "$(date +%H:%M:%S) !! POST ${dst} returned HTTP ${code} at offset ${off}"
+          return 1 ;;
+    esac
+  done
+  n="$total"
 
   newest=$(printf '%s' "$new" | jq -r 'max_by(.timestamp).timestamp')
   jq --arg b "$src" --arg t "$newest" '.[$b]=$t' "$STATE" > "${STATE}.tmp" && mv "${STATE}.tmp" "$STATE"
