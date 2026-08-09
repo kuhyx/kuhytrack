@@ -389,16 +389,21 @@ class Handler(BaseHTTPRequestHandler):
         p, q = u.path.rstrip("/") or "/", parse_qs(u.query)
         if p == "/health":
             return self._send(200, {"ok": True, "version": VERSION})
+        # The dashboard shell is served unauthenticated on purpose. It carries no data —
+        # it fetches everything from /api/0/*, which stays gated below — and it keeps the
+        # token in localStorage. A browser navigating here sends no Authorization header,
+        # so gating this would 401 the very page holding the "set token" button, leaving
+        # no way to enter the token and no way to reach the dashboard at all.
+        if p == "/" or p == "/index.html":
+            f = WEB_DIR / "dashboard.html"
+            if f.exists():
+                return self._send(
+                    200, raw=f.read_bytes(), ctype="text/html; charset=utf-8"
+                )
+            return self._send(404, {"error": "no dashboard"})
         if not self._authed():
             return self._send(401, {"error": "unauthorized"})
         try:
-            if p == "/" or p == "/index.html":
-                f = WEB_DIR / "dashboard.html"
-                if f.exists():
-                    return self._send(
-                        200, raw=f.read_bytes(), ctype="text/html; charset=utf-8"
-                    )
-                return self._send(404, {"error": "no dashboard"})
             if p == "/api/0/info":
                 return self._send(
                     200,

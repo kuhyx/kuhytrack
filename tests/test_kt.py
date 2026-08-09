@@ -5,6 +5,7 @@ Covers the two things that actually break activity trackers:
   1. heartbeat merge semantics (must match aw-core exactly, or durations lie)
   2. multi-device isolation + offline backfill ordering
 """
+
 import json
 import os
 import subprocess
@@ -38,7 +39,9 @@ class Heartbeats(unittest.TestCase):
         kt.create_bucket("b", {"type": "currentwindow", "client": "t", "hostname": "h"})
 
     def hb(self, off, dur, data, pulse=60):
-        return kt.heartbeat("b", {"timestamp": ts(off), "duration": dur, "data": data}, pulse)
+        return kt.heartbeat(
+            "b", {"timestamp": ts(off), "duration": dur, "data": data}, pulse
+        )
 
     def test_same_data_within_pulse_merges(self):
         self.hb(0, 0, {"app": "firefox"})
@@ -81,9 +84,9 @@ class Heartbeats(unittest.TestCase):
 
     def test_zero_pulsetime_only_merges_contiguous(self):
         self.hb(0, 10, {"app": "a"})
-        self.hb(10, 0, {"app": "a"}, pulse=0)   # exactly at end -> merges
+        self.hb(10, 0, {"app": "a"}, pulse=0)  # exactly at end -> merges
         self.assertEqual(len(kt.get_events("b")), 1)
-        self.hb(11, 0, {"app": "a"}, pulse=0)   # 1s gap -> splits
+        self.hb(11, 0, {"app": "a"}, pulse=0)  # 1s gap -> splits
         self.assertEqual(len(kt.get_events("b")), 2)
 
 
@@ -91,25 +94,41 @@ class Devices(unittest.TestCase):
     def setUp(self):
         kt.db().execute("DELETE FROM events")
         kt.db().execute("DELETE FROM buckets")
-        kt.create_bucket("aw-watcher-window_arch", {"type": "currentwindow", "hostname": "arch"})
-        kt.create_bucket("kt-watcher-android_pixel", {"type": "currentwindow", "hostname": "pixel",
-                                                      "device": "pixel"})
+        kt.create_bucket(
+            "aw-watcher-window_arch", {"type": "currentwindow", "hostname": "arch"}
+        )
+        kt.create_bucket(
+            "kt-watcher-android_pixel",
+            {"type": "currentwindow", "hostname": "pixel", "device": "pixel"},
+        )
 
     def test_devices_do_not_merge_into_each_other(self):
-        kt.heartbeat("aw-watcher-window_arch", {"timestamp": ts(0), "duration": 0,
-                                                "data": {"app": "firefox"}}, 60)
-        kt.heartbeat("kt-watcher-android_pixel", {"timestamp": ts(5), "duration": 0,
-                                                  "data": {"app": "firefox"}}, 60)
+        kt.heartbeat(
+            "aw-watcher-window_arch",
+            {"timestamp": ts(0), "duration": 0, "data": {"app": "firefox"}},
+            60,
+        )
+        kt.heartbeat(
+            "kt-watcher-android_pixel",
+            {"timestamp": ts(5), "duration": 0, "data": {"app": "firefox"}},
+            60,
+        )
         self.assertEqual(len(kt.get_events("aw-watcher-window_arch")), 1)
         self.assertEqual(len(kt.get_events("kt-watcher-android_pixel")), 1)
 
     def test_summary_splits_by_device(self):
         for i in range(10):
-            kt.heartbeat("aw-watcher-window_arch", {"timestamp": ts(i * 10), "duration": 0,
-                                                    "data": {"app": "kitty"}}, 60)
+            kt.heartbeat(
+                "aw-watcher-window_arch",
+                {"timestamp": ts(i * 10), "duration": 0, "data": {"app": "kitty"}},
+                60,
+            )
         for i in range(5):
-            kt.heartbeat("kt-watcher-android_pixel", {"timestamp": ts(i * 10), "duration": 0,
-                                                      "data": {"app": "Signal"}}, 60)
+            kt.heartbeat(
+                "kt-watcher-android_pixel",
+                {"timestamp": ts(i * 10), "duration": 0, "data": {"app": "Signal"}},
+                60,
+            )
         s = kt.summary(start=ts(-3600), end=ts(3600))
         self.assertEqual(set(s["per_device"]), {"arch", "pixel"})
         self.assertEqual(s["per_device"]["arch"]["seconds"], 90)
@@ -118,27 +137,42 @@ class Devices(unittest.TestCase):
 
     def test_union_seconds_does_not_double_count_overlap(self):
         # phone and laptop active in the same 60s: sum=120, wall clock=60
-        kt.insert_event("aw-watcher-window_arch", {"timestamp": ts(0), "duration": 60,
-                                                   "data": {"app": "kitty"}})
-        kt.insert_event("kt-watcher-android_pixel", {"timestamp": ts(0), "duration": 60,
-                                                     "data": {"app": "Signal"}})
+        kt.insert_event(
+            "aw-watcher-window_arch",
+            {"timestamp": ts(0), "duration": 60, "data": {"app": "kitty"}},
+        )
+        kt.insert_event(
+            "kt-watcher-android_pixel",
+            {"timestamp": ts(0), "duration": 60, "data": {"app": "Signal"}},
+        )
         s = kt.summary(start=ts(-3600), end=ts(3600))
         self.assertEqual(s["total_seconds"], 120)
         self.assertEqual(s["union_seconds"], 60)
 
     def test_union_seconds_adds_disjoint_intervals(self):
-        kt.insert_event("aw-watcher-window_arch", {"timestamp": ts(0), "duration": 60,
-                                                   "data": {"app": "kitty"}})
-        kt.insert_event("kt-watcher-android_pixel", {"timestamp": ts(600), "duration": 60,
-                                                     "data": {"app": "Signal"}})
-        self.assertEqual(kt.summary(start=ts(-3600), end=ts(3600))["union_seconds"], 120)
+        kt.insert_event(
+            "aw-watcher-window_arch",
+            {"timestamp": ts(0), "duration": 60, "data": {"app": "kitty"}},
+        )
+        kt.insert_event(
+            "kt-watcher-android_pixel",
+            {"timestamp": ts(600), "duration": 60, "data": {"app": "Signal"}},
+        )
+        self.assertEqual(
+            kt.summary(start=ts(-3600), end=ts(3600))["union_seconds"], 120
+        )
 
     def test_offline_backfill_out_of_order_is_stored(self):
         # phone was offline; spool flushes 3h of old events after newer ones exist
-        kt.heartbeat("kt-watcher-android_pixel", {"timestamp": ts(0), "duration": 5,
-                                                  "data": {"app": "now"}}, 60)
-        kt.insert_event("kt-watcher-android_pixel", {"timestamp": ts(-10800), "duration": 60,
-                                                     "data": {"app": "earlier"}})
+        kt.heartbeat(
+            "kt-watcher-android_pixel",
+            {"timestamp": ts(0), "duration": 5, "data": {"app": "now"}},
+            60,
+        )
+        kt.insert_event(
+            "kt-watcher-android_pixel",
+            {"timestamp": ts(-10800), "duration": 60, "data": {"app": "earlier"}},
+        )
         evs = kt.get_events("kt-watcher-android_pixel")
         self.assertEqual(len(evs), 2)
         self.assertEqual(evs[0]["data"]["app"], "now")  # DESC order preserved
@@ -146,11 +180,19 @@ class Devices(unittest.TestCase):
 
 class TimeParsing(unittest.TestCase):
     def test_accepts_watcher_formats(self):
-        for s in ["2026-08-08T10:00:00Z", "2026-08-08T10:00:00+00:00",
-                  "2026-08-08T10:00:00.123456Z", "2026-08-08T10:00:00.123456789Z",
-                  "2026-08-08T12:00:00+02:00"]:
-            self.assertEqual(kt.parse_ts(s).tzinfo, timezone.utc if s.endswith("Z") or "+00:00" in s
-                             else kt.parse_ts(s).tzinfo)
+        for s in [
+            "2026-08-08T10:00:00Z",
+            "2026-08-08T10:00:00+00:00",
+            "2026-08-08T10:00:00.123456Z",
+            "2026-08-08T10:00:00.123456789Z",
+            "2026-08-08T12:00:00+02:00",
+        ]:
+            self.assertEqual(
+                kt.parse_ts(s).tzinfo,
+                timezone.utc
+                if s.endswith("Z") or "+00:00" in s
+                else kt.parse_ts(s).tzinfo,
+            )
             self.assertIsInstance(kt.fmt_ts(kt.parse_ts(s)), str)
 
     def test_naive_timestamps_assumed_utc(self):
@@ -163,10 +205,19 @@ class HttpApi(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        env = dict(os.environ, KT_DB=str(TMP / "http.db"), KT_PORT=str(cls.port),
-                   KT_TOKEN="testtoken", KT_HOST="127.0.0.1")
-        cls.proc = subprocess.Popen([sys.executable, str(ROOT / "server" / "kt_server.py")],
-                                    env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        env = dict(
+            os.environ,
+            KT_DB=str(TMP / "http.db"),
+            KT_PORT=str(cls.port),
+            KT_TOKEN="testtoken",
+            KT_HOST="127.0.0.1",
+        )
+        cls.proc = subprocess.Popen(
+            [sys.executable, str(ROOT / "server" / "kt_server.py")],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         for _ in range(50):
             try:
                 urllib.request.urlopen(f"http://127.0.0.1:{cls.port}/health", timeout=1)
@@ -180,10 +231,15 @@ class HttpApi(unittest.TestCase):
         cls.proc.terminate()
 
     def req(self, method, path, body=None, token="testtoken"):
-        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", method=method,
-                                   data=json.dumps(body).encode() if body is not None else None,
-                                   headers={"Content-Type": "application/json",
-                                            **({"Authorization": f"Bearer {token}"} if token else {})})
+        r = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            method=method,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={
+                "Content-Type": "application/json",
+                **({"Authorization": f"Bearer {token}"} if token else {}),
+            },
+        )
         with urllib.request.urlopen(r, timeout=5) as resp:
             return json.loads(resp.read() or b"null")
 
@@ -192,16 +248,57 @@ class HttpApi(unittest.TestCase):
             self.req("GET", "/api/0/buckets/", token=None)
         self.assertEqual(cm.exception.code, 401)
 
+    def raw(self, path, token=None):
+        """Fetch without JSON-decoding, the way a browser asks for a page."""
+        r = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            headers={"Authorization": f"Bearer {token}"} if token else {},
+        )
+        with urllib.request.urlopen(r, timeout=5) as resp:
+            return resp.status, resp.headers.get("Content-Type", ""), resp.read()
+
+    def test_dashboard_served_without_token(self):
+        """A browser navigating to / sends no Authorization header. If the shell were
+        gated, the page holding the 'set token' button would 401 and the dashboard
+        would be permanently unreachable."""
+        status, ctype, body = self.raw("/", token=None)
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", ctype)
+        self.assertIn(b"set token", body)
+
+    def test_api_still_gated_without_token(self):
+        """Serving the shell must not have opened up the data behind it."""
+        for path in ("/api/0/buckets/", "/api/0/kt/summary", "/api/0/export"):
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                self.raw(path, token=None)
+            self.assertEqual(cm.exception.code, 401, f"{path} should require a token")
+
     def test_full_watcher_flow(self):
-        self.req("POST", "/api/0/buckets/aw-watcher-window_test",
-                 {"client": "aw-watcher-window", "type": "currentwindow", "hostname": "test"})
+        self.req(
+            "POST",
+            "/api/0/buckets/aw-watcher-window_test",
+            {
+                "client": "aw-watcher-window",
+                "type": "currentwindow",
+                "hostname": "test",
+            },
+        )
         for i in range(3):
-            self.req("POST", "/api/0/buckets/aw-watcher-window_test/heartbeat?pulsetime=60",
-                     {"timestamp": ts(i * 5), "duration": 0, "data": {"app": "kitty", "title": "zsh"}})
+            self.req(
+                "POST",
+                "/api/0/buckets/aw-watcher-window_test/heartbeat?pulsetime=60",
+                {
+                    "timestamp": ts(i * 5),
+                    "duration": 0,
+                    "data": {"app": "kitty", "title": "zsh"},
+                },
+            )
         evs = self.req("GET", "/api/0/buckets/aw-watcher-window_test/events")
         self.assertEqual(len(evs), 1)
         self.assertEqual(evs[0]["duration"], 10)
-        self.assertEqual(self.req("GET", "/api/0/buckets/aw-watcher-window_test/events/count"), 1)
+        self.assertEqual(
+            self.req("GET", "/api/0/buckets/aw-watcher-window_test/events/count"), 1
+        )
         exp = self.req("GET", "/api/0/export")
         self.assertIn("aw-watcher-window_test", exp["buckets"])
 
@@ -209,14 +306,21 @@ class HttpApi(unittest.TestCase):
         h = self.req("POST", "/api/0/kt/habits", {"name": "5x5 squats"})
         today = datetime.now(timezone.utc).date()
         for d in range(3):
-            self.req("POST", f"/api/0/kt/habits/{h['id']}/tick",
-                     {"day": (today - timedelta(days=d)).isoformat()})
+            self.req(
+                "POST",
+                f"/api/0/kt/habits/{h['id']}/tick",
+                {"day": (today - timedelta(days=d)).isoformat()},
+            )
         hs = [x for x in self.req("GET", "/api/0/kt/habits") if x["id"] == h["id"]][0]
         self.assertEqual(hs["streak"], 3)
 
     def test_unknown_bucket_heartbeat_404s(self):
         with self.assertRaises(urllib.error.HTTPError) as cm:
-            self.req("POST", "/api/0/buckets/nope/heartbeat", {"timestamp": ts(0), "data": {}})
+            self.req(
+                "POST",
+                "/api/0/buckets/nope/heartbeat",
+                {"timestamp": ts(0), "data": {}},
+            )
         self.assertEqual(cm.exception.code, 404)
 
 
