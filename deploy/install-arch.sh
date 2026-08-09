@@ -25,6 +25,18 @@ if [ "${MISSING+x}" ]; then
   say "recommended but missing: ${MISSING[*]}  ->  sudo pacman -S --needed ${MISSING[*]}"
 fi
 
+# On X11 xprintidle is not "recommended", it is required: without it the only remaining
+# idle source is the /dev/input atime scan, which relatime freezes at boot. The watcher
+# then reports permanent idle and records ZERO window events. Installing a tracker that
+# silently captures nothing is worse than refusing to install.
+if [ "${XDG_SESSION_TYPE:-}" = "x11" ] && ! command -v xprintidle >/dev/null; then
+  echo "install: xprintidle is required on X11 -- without it the watcher reports" >&2
+  echo "  permanent idle and records no window events at all." >&2
+  echo "  Run: sudo pacman -S --needed xprintidle" >&2
+  echo "  (override with KT_SKIP_IDLE_CHECK=1 if you know what you are doing)" >&2
+  [ "${KT_SKIP_IDLE_CHECK:-}" = "1" ] || exit 1
+fi
+
 mkdir -p "$SHARE" "$BIN" "$CONF" "$DATA" "$UNITS"
 # Every component ships, including hooks/ (the budget enforcement loop, which is the
 # whole argument for running this over upstream AW) and android/ (staged here so the
@@ -70,7 +82,24 @@ EOF
   chmod 600 "$CONF/env"
   say "generated $CONF/env  (token: $TOKEN)"
 else
-  say "kept existing $CONF/env"
+  # The env file is kept (never clobber a working token or db path), but an explicit
+  # KT_BIND must still take effect -- otherwise `KT_BIND=tailscale ./install-arch.sh`
+  # on an existing install prints "kept existing" and silently stays on loopback,
+  # which is the same silent no-op this script now refuses everywhere else.
+  if [ "${KT_BIND:-}" = "tailscale" ]; then
+    command -v tailscale >/dev/null || {
+      echo "install: KT_BIND=tailscale but tailscale is not installed" >&2; exit 1; }
+    NEWHOST="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+    [ -n "$NEWHOST" ] || {
+      echo "install: KT_BIND=tailscale but no tailscale IPv4 address." >&2
+      echo "  'tailscale status' probably says Logged out. Run: sudo tailscale up" >&2
+      echo "  Then re-run this installer. Refusing to silently keep the old bind." >&2
+      exit 1; }
+    sed -i "s|^KT_HOST=.*|KT_HOST=$NEWHOST|" "$CONF/env"
+    say "rebound to $NEWHOST in $CONF/env"
+  else
+    say "kept existing $CONF/env"
+  fi
 fi
 # shellcheck disable=SC1091
 set -a; . "$CONF/env"; set +a

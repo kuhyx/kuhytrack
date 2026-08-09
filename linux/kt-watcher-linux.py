@@ -20,6 +20,7 @@ Env: KT_URL KT_TOKEN KT_DEVICE KT_POLL(=5s) KT_AFK_TIMEOUT(=180s) KT_PULSETIME(=
      KT_SPOOL     (default ~/.cache/kuhytrack/spool.jsonl)
      KT_EXCLUDE_TITLE_RE  (regex; matching titles are replaced with '<redacted>')
 """
+
 from __future__ import annotations
 
 import json
@@ -55,7 +56,9 @@ def log(*a):
 
 def sh(cmd, **kw):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=3, **kw).stdout.strip()
+        return subprocess.run(
+            cmd, capture_output=True, text=True, timeout=3, **kw
+        ).stdout.strip()
     except Exception:
         return ""
 
@@ -66,11 +69,17 @@ def has(binary):
 
 # ------------------------------------------------------------------- transport
 
+
 def post(path, payload, params=""):
     req = urllib.request.Request(
-        f"{URL}{path}{params}", data=json.dumps(payload).encode(), method="POST",
-        headers={"Content-Type": "application/json",
-                 **({"Authorization": f"Bearer {TOKEN}"} if TOKEN else {})})
+        f"{URL}{path}{params}",
+        data=json.dumps(payload).encode(),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            **({"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}),
+        },
+    )
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read() or b"null")
 
@@ -92,8 +101,11 @@ def spool_flush():
         except json.JSONDecodeError:
             continue
         try:
-            post(f"/api/0/buckets/{item['bucket']}/heartbeat",
-                 item["event"], f"?pulsetime={item['pulsetime']}")
+            post(
+                f"/api/0/buckets/{item['bucket']}/heartbeat",
+                item["event"],
+                f"?pulsetime={item['pulsetime']}",
+            )
         except Exception:
             kept = lines[i:]
             break
@@ -103,7 +115,11 @@ def spool_flush():
 
 
 def heartbeat(bucket, data, duration=0.0):
-    ev = {"timestamp": datetime.now(timezone.utc).isoformat(), "duration": duration, "data": data}
+    ev = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "duration": duration,
+        "data": data,
+    }
     try:
         spool_flush()
         post(f"/api/0/buckets/{bucket}/heartbeat", ev, f"?pulsetime={PULSETIME}")
@@ -114,17 +130,22 @@ def heartbeat(bucket, data, duration=0.0):
 
 
 def ensure_buckets(quiet=False):
-    for bid, btype, client in ((WIN_BUCKET, "currentwindow", "kt-watcher-window"),
-                               (AFK_BUCKET, "afkstatus", "kt-watcher-afk")):
+    for bid, btype, client in (
+        (WIN_BUCKET, "currentwindow", "kt-watcher-window"),
+        (AFK_BUCKET, "afkstatus", "kt-watcher-afk"),
+    ):
         try:
-            post(f"/api/0/buckets/{bid}",
-                 {"client": client, "type": btype, "hostname": DEVICE, "device": DEVICE})
+            post(
+                f"/api/0/buckets/{bid}",
+                {"client": client, "type": btype, "hostname": DEVICE, "device": DEVICE},
+            )
         except Exception as e:
             if not quiet:
                 log(f"bucket {bid} not created yet: {e}")
 
 
 # ---------------------------------------------------------------- window source
+
 
 def _hypr():
     if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE") or not has("hyprctl"):
@@ -179,9 +200,13 @@ def _x11():
     wid = m.group(1)
     props = sh(["xprop", "-id", wid, "WM_CLASS", "_NET_WM_NAME", "WM_NAME"])
     cls = re.search(r'WM_CLASS\(STRING\) = "[^"]*", "([^"]*)"', props)
-    title = re.search(r'_NET_WM_NAME\(UTF8_STRING\) = "(.*)"', props) or \
-        re.search(r'WM_NAME\(STRING\) = "(.*)"', props)
-    return {"app": cls.group(1) if cls else "?", "title": title.group(1) if title else ""}
+    title = re.search(r'_NET_WM_NAME\(UTF8_STRING\) = "(.*)"', props) or re.search(
+        r'WM_NAME\(STRING\) = "(.*)"', props
+    )
+    return {
+        "app": cls.group(1) if cls else "?",
+        "title": title.group(1) if title else "",
+    }
 
 
 def _kwin():
@@ -191,8 +216,10 @@ def _kwin():
     if has("kdotool"):
         wid = sh(["kdotool", "getactivewindow"])
         if wid:
-            return {"app": sh(["kdotool", "getwindowclassname", wid]) or "?",
-                    "title": sh(["kdotool", "getwindowname", wid]) or ""}
+            return {
+                "app": sh(["kdotool", "getwindowclassname", wid]) or "?",
+                "title": sh(["kdotool", "getwindowname", wid]) or "",
+            }
     return None
 
 
@@ -207,8 +234,10 @@ def pick_window_source():
                 return name, fn
         except Exception:
             continue
-    log("!! no window source works here. Install xprintidle/kdotool or run under "
-        "Hyprland/sway/X11. Watcher will still record AFK status.")
+    log(
+        "!! no window source works here. Install xprintidle/kdotool or run under "
+        "Hyprland/sway/X11. Watcher will still record AFK status."
+    )
     return "none", lambda: None
 
 
@@ -235,9 +264,19 @@ def _idle_xprintidle():
 def _idle_mutter():
     if not has("gdbus"):
         return None
-    out = sh(["gdbus", "call", "--session", "--dest", "org.gnome.Mutter.IdleMonitor",
-              "--object-path", "/org/gnome/Mutter/IdleMonitor/Core",
-              "--method", "org.gnome.Mutter.IdleMonitor.GetIdletime"])
+    out = sh(
+        [
+            "gdbus",
+            "call",
+            "--session",
+            "--dest",
+            "org.gnome.Mutter.IdleMonitor",
+            "--object-path",
+            "/org/gnome/Mutter/IdleMonitor/Core",
+            "--method",
+            "org.gnome.Mutter.IdleMonitor.GetIdletime",
+        ]
+    )
     m = re.search(r"(\d+)", out)
     return float(m.group(1)) / 1000 if m else None
 
@@ -245,12 +284,39 @@ def _idle_mutter():
 def _idle_kde():
     if not has("qdbus"):
         return None
-    out = sh(["qdbus", "org.freedesktop.ScreenSaver", "/ScreenSaver", "GetSessionIdleTime"])
+    out = sh(
+        ["qdbus", "org.freedesktop.ScreenSaver", "/ScreenSaver", "GetSessionIdleTime"]
+    )
     return float(out) if out.isdigit() else None
 
 
+def _devinput_atime_is_live():
+    """Is /dev mounted so that st_atime actually tracks reads?
+
+    Under the near-universal `relatime` (and obviously `noatime`) the kernel does not
+    update atime on every read, so the timestamps freeze at boot. _idle_devinput then
+    returns a large, entirely plausible float forever -- the watcher believes you have
+    been idle for hours, records no windows at all, and logs a cheerful
+    'idle source: devinput' while collecting nothing. A source that structurally cannot
+    work must not be selectable, so this is checked before offering it.
+    """
+    try:
+        with open("/proc/mounts") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) >= 4 and parts[1] == "/dev":
+                    opts = parts[3].split(",")
+                    return not ({"relatime", "noatime"} & set(opts))
+    except OSError:
+        pass
+    return False
+
+
 def _idle_devinput():
-    """Wayland-agnostic: newest mtime across /dev/input/event*. Needs group `input`."""
+    """Wayland-agnostic: newest atime across /dev/input/event*. Needs group `input`,
+    and a /dev whose atime is not frozen by relatime -- see _devinput_atime_is_live."""
+    if not _devinput_atime_is_live():
+        return None
     newest = 0.0
     try:
         for p in Path("/dev/input").glob("event*"):
@@ -263,8 +329,13 @@ def _idle_devinput():
     return (time.time() - newest) if newest else None
 
 
-IDLE_SOURCES = [("KT_IDLE_CMD", _idle_cmd), ("xprintidle", _idle_xprintidle),
-                ("mutter", _idle_mutter), ("kde", _idle_kde), ("devinput", _idle_devinput)]
+IDLE_SOURCES = [
+    ("KT_IDLE_CMD", _idle_cmd),
+    ("xprintidle", _idle_xprintidle),
+    ("mutter", _idle_mutter),
+    ("kde", _idle_kde),
+    ("devinput", _idle_devinput),
+]
 
 
 def pick_idle_source():
@@ -276,12 +347,17 @@ def pick_idle_source():
                 return name, fn
         except Exception:
             continue
-    log("!! no idle source. AFK will always report not-afk — your totals will be inflated. "
-        "Fix: pacman -S xprintidle (X11) or add yourself to the `input` group (Wayland).")
+    log(
+        "!! no idle source. AFK will always report not-afk, so no window events will be "
+        "recorded at all. Fix: pacman -S xprintidle (X11/Xwayland). The /dev/input "
+        "fallback needs group `input` AND a /dev without relatime — on a stock Arch "
+        "install relatime is on, so the group alone will not fix this."
+    )
     return "none", lambda: 0.0
 
 
 # ------------------------------------------------------------------------- main
+
 
 def main():
     ensure_buckets()
