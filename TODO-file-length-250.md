@@ -61,7 +61,7 @@ an exempt extension, no `# noqa`-style suppressions.
 
 A refactor without a gate silently regrows. Before this task is done:
 
-1. Wire the shared gate `~/utils/scripts/check_file_length.sh` into this repo's
+1. Wire the shared gate `~/src/utils/scripts/check_file_length.sh` into this repo's
    `.pre-commit-config.yaml` as a local hook. If the repo has no pre-commit
    config, add a minimal one.
 2. The hook checks **files in the commit** (not the whole tree), so unrelated
@@ -72,7 +72,7 @@ A refactor without a gate silently regrows. Before this task is done:
 
 ## Done condition
 
-- `bash ~/utils/scripts/check_file_length.sh --all` from this repo root exits 0.
+- `bash ~/src/utils/scripts/check_file_length.sh --all` from this repo root exits 0.
 - The repo's own test suite and coverage bar are still green.
 - `pre-commit run --files <changed files>` passes.
 - A deliberately over-250-line test file, staged, makes `git commit` **fail**.
