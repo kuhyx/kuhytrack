@@ -17,8 +17,8 @@ churn, not size alone — refactoring pays where code is read and changed often
 
 ## Scope in this repo
 
-- **4 files** currently exceed 250 lines (of 19 eligible files).
-- **1,682 lines** sit in violation; longest file is **652 lines**.
+- **3 files** currently exceed 250 lines (`linux/kt-watcher-linux.py` was split on 2026-10-02).
+- **1,290 lines** sit in violation; longest file is **652 lines**.
 
 Exempt (do NOT split these):
 
@@ -37,7 +37,6 @@ has near-zero payoff and should not be first.
 | ----: | ---------: | :--- | :-------------------------- |
 |   652 |          3 | code | `server/kt_server.py`       |
 |   310 |          4 | code | `importers/kt-import.py`    |
-|   392 |          2 | code | `linux/kt-watcher-linux.py` |
 |   328 |          2 | code | `tests/test_kt.py`          |
 
 ## How to split

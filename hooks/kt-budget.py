@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -46,22 +47,36 @@ CONF = Path(
     os.environ.get("KT_BUDGETS", Path.home() / ".config/kuhytrack/budgets.json")
 )
 
+# The lock goes through logind: `loginctl lock-session <graphical session>` emits
+# Lock, which xss-lock (started by the i3 config) turns into i3lock. The session id
+# is resolved at run time because this runs from a systemd user service, which
+# belongs to no session -- a bare `loginctl lock-session` would fail there. The old
+# default POSTed to 127.0.0.1:8765/lock, an endpoint that never existed (8765 is
+# the phone workout app's port), so the budget could never lock anything.
+LOCK_ACTION = (
+    "notify-send -u critical 'kuhytrack' '{app}: {used}m of {budget}m used'; "
+    'loginctl lock-session "$(loginctl show-user "$(id -un)" -p Display --value)"'
+)
+
 DEFAULTS = {
     "_comment": "match is a list of substrings tested against the app/package name. "
     "minutes is the daily budget. action runs once when it is first exceeded "
-    "today; {app} {used} {budget} are substituted.",
+    "today; {app} {used} {budget} are substituted. device is the watcher's "
+    "KT_DEVICE, which defaults to the hostname.",
     "budgets": [
         {
             "name": "doomscroll",
             "device": "pixel6a",
             "match": ["reddit", "youtube", "twitter", "instagram", "tiktok"],
             "minutes": 60,
-            "action": "curl -sf -X POST http://127.0.0.1:8765/lock -d 'reason={app} {used}m'",
+            "action": LOCK_ACTION,
         },
         {
             "name": "browser",
-            "device": "arch",
-            "match": ["firefox", "chromium"],
+            # Not "arch": the linux watcher names its buckets by hostname, so a
+            # literal "arch" matched no device and this budget could never fire.
+            "device": socket.gethostname(),
+            "match": ["firefox", "chromium", "chrome", "thorium"],
             "minutes": 120,
             "action": "notify-send 'kuhytrack' '{app}: {used}m of {budget}m used'",
         },

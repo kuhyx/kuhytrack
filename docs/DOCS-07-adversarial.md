@@ -41,13 +41,18 @@ change your week:
 ```jsonc
 { "name": "doomscroll", "device": "pixel6a",
   "match": ["reddit","youtube","tiktok"], "minutes": 60,
-  "action": "curl -X POST http://127.0.0.1:8765/lock -d 'reason={app} {used}m'" }
+  "action": "notify-send ...; loginctl lock-session \"$(loginctl show-user \"$(id -un)\" -p Display --value)\"" }
 ```
 
 Verified in this run against seeded data: budget blown → action fires exactly once per
 day, exit code 10, second run does not re-fire. Point `action` at whatever interface
 screen-locker exposes (an HTTP endpoint, a CLI, a systemd unit) and the tracker stops
 being a diary.
+
+(2026-10-02: the example used to POST to `127.0.0.1:8765/lock`. Nothing ever
+listened there -- 8765 is the phone workout app's port -- so the budget could not
+lock anything. screen-locker exposes no lock-on-demand interface; the lock that
+exists is logind's, which xss-lock turns into i3lock.)
 
 **Suggested first budget, and only one:** pick the single app you would be embarrassed to
 see at the top of the list, set the budget 20% below your current daily average (`ktq
