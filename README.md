@@ -72,7 +72,7 @@ Check with `journalctl --user -u kuhytrack-watcher`: the startup line must read
 
 ## API
 
-Everything ActivityWatch serves at `/api/0` (see `01-activitywatch-teardown.md`), plus:
+Everything ActivityWatch serves at `/api/0` (see `DOCS-01-activitywatch-teardown.md`), plus:
 
 ```
 GET  /api/0/kt/summary?start=&end=&device=&top=     union_seconds, per_device, top_apps, per_type
@@ -95,7 +95,7 @@ dashboard and `ktq` show as "active".
 | stdlib `http.server`, no framework | no async, ~hundreds of req/s ceiling. Irrelevant at 3 devices |
 | one central server, no peer sync | the box must be up, or watchers spool to disk until it is |
 | AW wire protocol | stuck with bucket-per-watcher naming and the `data`-equality merge rule |
-| sqlite, no retention policy | see the growth math in `04-critique.md`; add a cron `DELETE` if titles churn |
+| sqlite, no retention policy | see the growth math in `DOCS-04-critique.md`; add a cron `DELETE` if titles churn |
 | bearer token, no users | LAN/tailnet only. Never expose publicly |
 | port 5600, same as ActivityWatch | deliberate (aw watchers point here unchanged), but the two cannot run at once. If you later start `aw-qt` it will fail to bind — pick one, or move kuhytrack with `KT_PORT` |
 
