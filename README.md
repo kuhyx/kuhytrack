@@ -1,3 +1,5 @@
+**Moved:** this project now lives in [kuhyx/leisure-watch](https://github.com/kuhyx/leisure-watch) under `kuhytrack/`. This repo is archived.
+
 # kuhytrack
 
 ActivityWatch's data model, one central server, dumb spooling watchers on every device.
